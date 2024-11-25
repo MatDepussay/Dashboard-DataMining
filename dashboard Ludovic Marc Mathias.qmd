@@ -1,0 +1,768 @@
+---
+title: "Élections 2022 en France Métropolitaine"
+format: dashboard
+
+theme: 
+  - cosmo
+  - assets/custom.scss
+  - assets/quarto.scss
+  
+resources:
+  - assets/city-of-norfolk.png
+
+execute: 
+  echo: false
+---
+
+```{r setup, include = FALSE}
+library(plotly)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(forcats)
+library(leaflet)
+library(dplyr)
+library(targets)
+library(geojsonio)
+library(sf)
+```
+
+```{r, Data}
+#| include: false
+resultat <- read.csv("general_results.csv", header = TRUE, sep = ";")
+```
+
+```{r}
+#| include: false
+# Extracting the subset
+pressidentielle_2022_t1 <- resultat %>%
+  filter(id_election == "2022_pres_t1")
+
+tx_abstention_2022_pres_t1 <- (sum(pressidentielle_2022_t1$Abstentions)/sum(pressidentielle_2022_t1$Inscrits))*100
+
+pressidentielle_2022_t2 <- resultat %>% filter(id_election == "2022_pres_t2")
+
+tx_abstention_2022_pres_t2 <- (sum(pressidentielle_2022_t2$Abstentions)/sum(pressidentielle_2022_t2$Inscrits))*100
+
+
+resultat_par_departement_t1 <- pressidentielle_2022_t1 %>%
+  group_by(Libellé.du.département) %>%
+  summarise(
+    total_inscrits = sum(Inscrits, na.rm = TRUE),
+    total_abstentions = sum(Abstentions, na.rm = TRUE),
+    taux_abstention = round((total_abstentions / total_inscrits) * 100, 3),
+    total_blancs = sum(Blancs, na.rm = TRUE),
+    total_nuls = sum(Nuls, na.rm = TRUE),
+    total_votants = sum(Votants, na.rm = TRUE),
+    taux_vote_blancs = round((total_blancs / total_votants) * 100, 3)
+  )
+
+
+resultat_par_departement_t2 <- pressidentielle_2022_t2 %>%
+  group_by(Libellé.du.département) %>%
+  summarise(
+    total_inscrits = sum(Inscrits, na.rm = TRUE),
+    total_abstentions = sum(Abstentions, na.rm = TRUE),
+    taux_abstention = round((total_abstentions / total_inscrits) * 100, 3),
+    total_blancs = sum(Blancs, na.rm = TRUE),
+    total_nuls = sum(Nuls, na.rm = TRUE),
+    total_votants = sum(Votants, na.rm = TRUE),
+    taux_vote_blancs = round((total_blancs / total_votants) * 100, 3)
+  )
+
+```
+
+```{r}
+#| include: false
+departements <- geojson_read("departements.geojson",what = "sp")
+```
+
+```{r}
+#| include: false
+unique(resultat_par_departement_t1$Libellé.du.département)
+unique(departements$nom_departement)  # Remplacez par le nom de la colonne appropriée
+```
+
+```{r, tour 1 legislatives}
+#| include: false
+departements_sf <- st_as_sf(departements)
+
+
+st_geometry_type(departements_sf)  # Pour vérifier le type de géométrie
+names(departements_sf)              # Pour lister les colonnes
+
+resultat_par_departement_t1$Libellé.du.département <- tolower(resultat_par_departement_t1$Libellé.du.département)
+departements_sf$nom <- tolower(departements_sf$nom)
+
+resultat_geo <- departements_sf %>%
+  left_join(resultat_par_departement_t1, by = c("nom" = "Libellé.du.département"))
+
+```
+
+```{r, tour 2 legislatives}
+#| include: false
+resultat_par_departement_t2$Libellé.du.département <- tolower(resultat_par_departement_t2$Libellé.du.département)
+
+resultat_par_departement_t2 <- resultat_par_departement_t2 %>%
+  mutate(difference_abstention = round(taux_abstention - resultat_par_departement_t1$taux_abstention, 3))
+
+resultat_par_departement_t2 <- resultat_par_departement_t2 %>%
+  mutate(difference_vote_blancs = round(taux_vote_blancs - resultat_par_departement_t1$taux_vote_blancs, 3))
+
+resultat_geo2 <- departements_sf %>%
+  left_join(resultat_par_departement_t2, by = c("nom" = "Libellé.du.département"))
+
+```
+
+# Présidentielle 2022
+
+```{r load-targets-today}
+
+```
+
+```{r}
+#|include: false
+evo_tx_abstention_pres_2022 <- round(tx_abstention_2022_pres_t2-tx_abstention_2022_pres_t1,2)
+
+tx_participation_pres_2022_t2 <- round((sum(resultat_par_departement_t2$total_votants)/ sum(resultat_par_departement_t2$total_inscrits))*100,1)
+
+tx_participation_pres_2022_t1 <- round((sum(resultat_par_departement_t1$total_votants)/ sum(resultat_par_departement_t1$total_inscrits))*100,1)
+
+evo_tx_participation_pres_2022 <- round(tx_participation_pres_2022_t2-tx_participation_pres_2022_t1,2)
+
+total_abstention_pres_2022_t2 <- sum(resultat_par_departement_t2$total_abstentions)
+```
+
+## Row
+
+::: {.valuebox icon="check" color="vb-success"}
+Au second tour des présidentielles 2022 le taux de participation au suffrage était de `r tx_participation_pres_2022_t2`%
+:::
+
+::: {.valuebox icon="arrow-up-right" color="vb-warning"}
+Le taux d'abstention a augmenté de `r evo_tx_abstention_pres_2022` points entre le 1er tour des présidentielles 2022 et le second tour
+:::
+
+::: {.valuebox icon="x-circle" color="vb-danger"}
+Au second tour des élections présidentielles 2022 `r total_abstention_pres_2022_t2` francais(e)s ont préferé(e)s ne pas aller voter.
+:::
+
+## Row
+
+### Column {.tabset width="50%"}
+
+```{r}
+#| title: Présidentielle 2022 1er tour
+pal <- colorNumeric(
+  palette = "YlOrRd",
+  domain = resultat_geo$taux_abstention 
+)
+
+leaflet(resultat_geo) |> 
+  addTiles() |> 
+  addPolygons(
+    fillColor = ~pal(taux_abstention),  
+    weight = 1,
+    opacity = 1,
+    color = "#756bb1",
+    dashArray = "3",
+    fillOpacity = 0.7,
+    highlightOptions = highlightOptions(
+      weight = 5,
+      color = "blue",
+      dashArray = "",
+      fillOpacity = 0.7
+    ),
+    popup = ~paste(
+      "Département: ", nom, 
+      "<br>Taux d'abstention: ", taux_abstention, "%",
+      "<br>Taux de votes blancs: ", taux_vote_blancs, "%"
+    )
+  ) |> 
+  addLegend(
+    pal = pal,
+    values = ~taux_abstention,
+    opacity = 0.7,
+    title = "Taux d'abstention (%)",
+    position = "bottomright"
+  )
+```
+
+### Column
+
+```{r}
+#| title: Présidentielle 2022 2eme tour
+
+pal <- colorNumeric(
+  palette = "YlOrRd",
+  domain = resultat_geo2$taux_abstention 
+)
+
+leaflet(resultat_geo2) |> 
+  addTiles() |> 
+  addPolygons(fillColor = ~pal(taux_abstention),
+    weight = 1,
+    opacity = 1,
+    color = "#756bb1",
+    dashArray = "3",
+    fillOpacity = 0.7,
+    highlightOptions = highlightOptions(
+      weight = 5,
+      color = "blue",
+      dashArray = "",
+      fillOpacity = 0.7
+    ),
+    popup = ~paste(
+      "Département: ", nom, 
+      "<br>Taux d'abstention: ", taux_abstention, "%",
+      "<br>Par rapport au 1er tour:", difference_abstention, "points",
+      "<br>Taux de votes blancs: ", taux_vote_blancs, "%",
+      "<br>Par rapport au 1er tour:", difference_vote_blancs, "points"
+    )
+  )|> 
+  addLegend(
+    pal = pal,
+    values = ~taux_abstention,
+    opacity = 0.7,
+    title = "Taux d'abstention (%)",
+    position = "bottomright"
+  )
+```
+
+```{r today-top-in-progress}
+#| title: Top In Progress
+#| caption: These things are in progress right now.
+
+
+```
+
+```{r today-top-closed}
+#| title: Top Closed Today
+
+```
+
+### Column
+
+```{r today-opened-by-hour}
+#| title: Opened by Hour of Day
+
+```
+
+```{r today-resolved-by-hour}
+#| title: Resolved by Hour of Day
+
+```
+
+# Législatives 2022
+```{r}
+#|include: false
+
+
+elections_legi <- subset(resultat, grepl("legi", id_election))
+
+elections_legi2 <- elections_legi |> 
+  separate(id_election, into = c("Annee", "Election", "Tour"), sep = "_")
+
+df_legi22 <- elections_legi2 |> filter(Annee == "2022")
+#T1
+df_abst_t1 <- df_legi22 |> filter(Tour =="t1") |> 
+  group_by(Code.du.département) |>   # Regrouper par département
+  summarise(Abstentions_dep = sum(Abstentions, na.rm = TRUE),
+    total_abstentions = sum(Abstentions, na.rm = TRUE),
+    total_blancs = sum(Blancs, na.rm = TRUE),
+    total_nuls = sum(Nuls, na.rm = TRUE),
+    total_votants = sum(Votants, na.rm = TRUE),
+    taux_vote_blancs = round((total_blancs / total_votants) * 100, 3))
+
+df_Inscrits_t1 <- df_legi22 |> filter(Tour=="t1") |> 
+  group_by(Code.du.département) |>   # Regrouper par département
+  summarise(Inscrits_dep = sum(Inscrits, na.rm = TRUE))
+
+df_part_t1 <- df_abst_t1 |> left_join(df_Inscrits_t1, by ="Code.du.département")
+
+df_part_t1 <- df_part_t1 |> mutate(Taux_abs = (Abstentions_dep / Inscrits_dep)*100)
+
+# T2
+df_abst_t2 <- df_legi22 |> filter(Tour=="t2") |> 
+  group_by(Code.du.département) |>   # Regrouper par département
+  summarise(Abstentions_dep = sum(Abstentions, na.rm = TRUE),
+    total_abstentions = sum(Abstentions, na.rm = TRUE),
+    total_blancs = sum(Blancs, na.rm = TRUE),
+    total_nuls = sum(Nuls, na.rm = TRUE),
+    total_votants = sum(Votants, na.rm = TRUE),
+    taux_vote_blancs = round((total_blancs / total_votants) * 100, 3))
+
+df_Inscrits_t2 <- df_legi22 |> filter(Tour=="t2") |> 
+  group_by(Code.du.département) |>   # Regrouper par département
+  summarise(Inscrits_dep = sum(Inscrits, na.rm = TRUE))
+
+df_part_t2 <- df_abst_t2 |> left_join(df_Inscrits_t2, by ="Code.du.département")
+
+df_part_t2 <- df_part_t2 |> mutate(Taux_abs = (Abstentions_dep / Inscrits_dep)*100)
+
+##############################
+
+# Convertir en sf l'objet des départements pour une gestion plus simple des jointures
+departements_sf <- st_as_sf(departements)
+
+# Mettre en correspondance les noms de département dans les deux jeux de données pour éviter les erreurs de jointure
+df_part_t1$Code.du.département <- tolower(df_part_t1$Code.du.département)
+departements_sf$code <- tolower(departements_sf$code)
+
+# Joindre les données d’abstention par département pour 2022 à la carte
+resultat_geo_collegue_t1 <- departements_sf %>%
+  left_join(df_part_t1, by = c("code" = "Code.du.département"))
+
+df_part_t2$Code.du.département <- tolower(df_part_t2$Code.du.département)
+departements_sf$code <- tolower(departements_sf$code)
+
+# Joindre les données d’abstention par département pour 2022 à la carte
+resultat_geo_collegue_t2 <- departements_sf %>%
+  left_join(df_part_t2, by = c("code" = "Code.du.département"))
+
+
+tx_abstention_2022_legi_t1 <- (sum(df_part_t1$Abstentions_dep)/sum(df_part_t1$Inscrits_dep))*100
+
+tx_abstention_2022_legi_t2 <- (sum(df_part_t2$Abstentions_dep)/sum(df_part_t2$Inscrits_dep))*100
+
+
+## Calcul pour bandereau du desus
+evo_tx_abstention_legi_2022 <- round(tx_abstention_2022_legi_t2-tx_abstention_2022_legi_t1,2)
+
+tx_participation_legi_2022_t2 <- round((sum(df_part_t2$total_votants)/ sum(df_part_t2$Inscrits_dep))*100,1)
+
+tx_participation_legi_2022_t1 <- round((sum(df_part_t1$total_votants)/ sum(df_part_t1$Inscrits_dep))*100,1)
+
+evo_tx_participation_legi_2022 <- round(tx_participation_legi_2022_t2-tx_participation_legi_2022_t1,2)
+
+total_abstention_legi_2022_t2 <- sum(df_part_t1$total_abstentions)
+```
+```{r load-targets-week}
+```
+
+
+## Row
+
+::: {.valuebox icon="check" color="vb-success"}
+Au second tour des législatives 2022 le taux de participation au suffrage était de `r tx_participation_legi_2022_t2`%
+:::
+
+::: {.valuebox icon="arrow-up-right" color="vb-warning"}
+Le taux d'abstention a augmenté de `r evo_tx_abstention_legi_2022` points entre le 1er tour des législatives 2022 et le second tour
+:::
+
+::: {.valuebox icon="x-circle" color="vb-danger"}
+Au second tour des élections législatives 2022 `r total_abstention_legi_2022_t2` francais(e)s ont préferé(e)s ne pas aller voter.
+:::
+
+## Row
+
+### Column {.tabset width="50%"}
+
+```{r week-top-new-requests}
+#| title: Législatives 2022 Tour 1
+
+# Créer une palette de couleurs en fonction du taux d’abstention
+pal <- colorNumeric(
+  palette = "YlOrRd",
+  domain = resultat_geo_collegue_t1$Taux_abs
+)
+
+# Générer la carte interactive
+leaflet(resultat_geo_collegue_t1) |> 
+  addTiles() |>  # Ajouter des tuiles de fond
+  addPolygons(
+    fillColor = ~pal(Taux_abs),  # Couleur basée sur le taux d’abstention
+    weight = 1,
+    opacity = 1,
+    color = "black",
+    dashArray = "3",
+    fillOpacity = 0.7,
+    highlightOptions = highlightOptions(
+      weight = 5,
+      color = "#666",
+      dashArray = "",
+      fillOpacity = 0.7
+    ),
+    popup = ~paste(
+      "Département: ", code, 
+      "<br>Taux d'abstention: ", round(Taux_abs, 3), "%"
+    )
+  ) |> 
+  addLegend(
+    pal = pal,
+    values = ~Taux_abs,
+    opacity = 0.7,
+    title = "Taux d'abstention (%)",
+    position = "bottomright"
+  )
+
+```
+
+```{r week-top-in-progress}
+#| title: Top In Progress
+#| caption: These things are in progress right now.
+
+```
+
+```{r week-top-closed}
+#| title: Top Closed This Week
+
+```
+
+### Column
+
+```{r week-opened-by-hour}
+#| title: Opened by Hour of Day
+
+```
+
+```{r week-resolved-by-hour}
+#| title: Législatives 2022 Tour 2
+
+# Créer une palette de couleurs en fonction du taux d’abstention
+pal <- colorNumeric(
+  palette = "YlOrRd",
+  domain = resultat_geo_collegue_t2$Taux_abs
+)
+
+# Générer la carte interactive
+leaflet(resultat_geo_collegue_t2) |> 
+  addTiles() |>  # Ajouter des tuiles de fond
+  addPolygons(
+    fillColor = ~pal(Taux_abs),  # Couleur basée sur le taux d’abstention
+    weight = 1,
+    opacity = 1,
+    color = "black",
+    dashArray = "3",
+    fillOpacity = 0.7,
+    highlightOptions = highlightOptions(
+      weight = 5,
+      color = "#666",
+      dashArray = "",
+      fillOpacity = 0.7
+    ),
+    popup = ~paste(
+      "Département: ", code, 
+      "<br>Taux d'abstention: ", round(Taux_abs, 3), "%"
+    )
+  ) |> 
+  addLegend(
+    pal = pal,
+    values = ~Taux_abs,
+    opacity = 0.7,
+    title = "Taux d'abstention (%)",
+    position = "bottomright"
+  )
+
+```
+
+# Évolution
+
+## Row
+
+```{r include=FALSE, echo=FALSE}
+elections_legi <- subset(resultat, grepl("legi", id_election))
+
+elections_legi2 <- elections_legi |> 
+  separate(id_election, into = c("Annee", "Election", "Tour"), sep = "_")
+
+# Initialiser une liste pour stocker les dataframes de chaque année
+results_list <- list()
+annees <- c(2002, 2007, 2012, 2017, 2022)
+
+# Boucle pour chaque année de 2002 à 2022
+for (year in annees) {
+  
+  # Filtrer les données pour l'année courante
+  df_legi <- elections_legi2 |> filter(Annee == as.character(year))
+  
+  # Calculs pour le premier tour
+  df_abst_t1 <- df_legi |> filter(Tour == "t1") |> 
+    group_by(Code.du.département) |>   
+    summarise(Abstentions_dep = sum(Abstentions, na.rm = TRUE))
+  
+  df_Inscrits_t1 <- df_legi |> filter(Tour == "t1") |> 
+    group_by(Code.du.département) |>   
+    summarise(Inscrits_dep = sum(Inscrits, na.rm = TRUE))
+  
+  df_part_t1 <- df_abst_t1 |> 
+    left_join(df_Inscrits_t1, by = "Code.du.département") |> 
+    mutate(Taux_abs = round((Abstentions_dep / Inscrits_dep) * 100, 2)) |> 
+    rename(
+      !!paste0("Abstentions_dep_", year) := Abstentions_dep,
+      !!paste0("Inscrits_dep_", year) := Inscrits_dep,
+      !!paste0("Taux_abs_", year) := Taux_abs
+    )
+  
+  # Calculs pour le second tour
+  df_abst_t2 <- df_legi |> filter(Tour == "t2") |> 
+    group_by(Code.du.département) |>   
+    summarise(Abstentions_dep = sum(Abstentions, na.rm = TRUE))
+  
+  df_Inscrits_t2 <- df_legi |> filter(Tour == "t2") |> 
+    group_by(Code.du.département) |>   
+    summarise(Inscrits_dep = sum(Inscrits, na.rm = TRUE))
+  
+  df_part_t2 <- df_abst_t2 |> 
+    left_join(df_Inscrits_t2, by = "Code.du.département") |> 
+    mutate(Taux_abs = round((Abstentions_dep / Inscrits_dep) * 100, 2)) |> 
+    rename(
+      !!paste0("Abstentions_dep_", year) := Abstentions_dep,
+      !!paste0("Inscrits_dep_", year) := Inscrits_dep,
+      !!paste0("Taux_abs_", year) := Taux_abs
+    )
+  
+  # Ajouter les dataframes du tour 1 et tour 2 dans la liste de résultats
+  results_list[[paste0("df_part_t1_", year)]] <- df_part_t1
+  results_list[[paste0("df_part_t2_", year)]] <- df_part_t2
+}
+
+# Vous pouvez maintenant accéder aux dataframes dans `results_list` par exemple:
+# results_list[["df_part_t1_2002"]]
+# results_list[["df_part_t2_2022"]]
+all_data <- data.frame()
+
+# Pour chaque année, extraire les valeurs de Taux_abs et les combiner
+for (year in c(2002, 2007, 2012, 2017, 2022)) {
+  # Extraire les données pour le premier tour de chaque année
+  df_t1 <- results_list[[paste0("df_part_t1_", year)]] |> 
+    mutate(
+      Annee = year,
+      Tour = "T1",
+      Taux_abs = !!sym(paste0("Taux_abs_", year))  # Sélection dynamique de la colonne
+    ) |> 
+    select(Code.du.département, Annee, Tour, Taux_abs)  # Garder seulement les colonnes nécessaires
+  
+  # Extraire les données pour le second tour de chaque année
+  df_t2 <- results_list[[paste0("df_part_t2_", year)]] |> 
+    mutate(
+      Annee = year,
+      Tour = "T2",
+      Taux_abs = !!sym(paste0("Taux_abs_", year))  # Sélection dynamique de la colonne
+    ) |> 
+    select(Code.du.département, Annee, Tour, Taux_abs)
+  
+  # Ajouter les données de cette année et des deux tours au dataframe `all_data`
+  all_data <- bind_rows(all_data, df_t1, df_t2)
+}
+
+# Calculer la moyenne nationale du taux d'abstention par année et par tour
+all_data_summary <- all_data |> 
+  group_by(Annee, Tour) |> 
+  summarise(Taux_abs_moyen = round(mean(Taux_abs, na.rm = TRUE),3))
+
+# Créer le graphique
+ggplot(all_data_summary, aes(x = Annee, y = Taux_abs_moyen, color = Tour, group = Tour)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 3) +
+  labs(
+    title = "Évolution du taux d'abstention moyen par année et par tour (Présidentielles et Législatives)",
+    x = "Année",
+    y = "Taux d'abstention moyen (%)",
+    color = "Tour"
+  ) +
+  theme_minimal()
+
+
+p <- ggplot(all_data_summary, aes(x = Annee, y = Taux_abs_moyen, color = Tour, group = Tour)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 3) +
+  ylim(30, 60) +  # Définir les limites de l'axe y
+  labs(
+    title = "Évolution du taux d'abstention moyen par année et par tour (Présidentielles et Législatives)",
+    x = "Année",
+    y = "Taux d'abstention moyen (%)",
+    color = "Tour"
+  ) +
+  theme_minimal()
+
+# Convertir le graphique ggplot en graphique interactif
+interactive_plot <- ggplotly(p)
+
+```
+
+```{r, include=FALSE, echo=FALSE}
+#|include: false
+#|echo: false
+elections_pres <- subset(resultat, grepl("pres", id_election))
+
+# Séparer les informations dans id_election pour extraire l'année et le tour
+elections_pres2 <- elections_pres |> 
+  separate(id_election, into = c("Annee", "Election", "Tour"), sep = "_")
+
+# Initialiser une liste pour stocker les dataframes de chaque année pour les présidentielles
+results_list_pres <- list()
+annees <- c(2002, 2007, 2012, 2017, 2022)
+
+# Boucle pour chaque année pour les présidentielles
+for (year in annees) {
+  
+  # Filtrer les données pour l'année courante
+  df_pres <- elections_pres2 |> filter(Annee == as.character(year))
+  
+  # Calculs pour le premier tour
+  df_abst_t1_pres <- df_pres |> filter(Tour == "t1") |> 
+    group_by(Code.du.département) |>   
+    summarise(Abstentions_dep = sum(Abstentions, na.rm = TRUE),
+              Inscrits_dep = sum(Inscrits, na.rm = TRUE)) |> 
+    mutate(Taux_abs = round((Abstentions_dep / Inscrits_dep) * 100, 2)) |> 
+    rename(
+      Abstentions_dep = Abstentions_dep,
+      Inscrits_dep = Inscrits_dep,
+      Taux_abs = Taux_abs
+    )
+  
+  # Calculs pour le second tour
+  df_abst_t2_pres <- df_pres |> filter(Tour == "t2") |> 
+    group_by(Code.du.département) |>   
+    summarise(Abstentions_dep = sum(Abstentions, na.rm = TRUE),
+              Inscrits_dep = sum(Inscrits, na.rm = TRUE)) |> 
+    mutate(Taux_abs = round((Abstentions_dep / Inscrits_dep) * 100, 2)) |> 
+    rename(
+      Abstentions_dep = Abstentions_dep,
+      Inscrits_dep = Inscrits_dep,
+      Taux_abs = Taux_abs
+    )
+  
+  # Ajouter les dataframes pour les présidentielles dans la liste
+  results_list_pres[[paste0("df_part_t1_pres_", year)]] <- df_abst_t1_pres
+  results_list_pres[[paste0("df_part_t2_pres_", year)]] <- df_abst_t2_pres
+}
+
+# Vous pouvez maintenant accéder aux dataframes présidentielles dans `results_list_pres`
+# Exemple : results_list_pres[["df_part_t1_pres_2002"]]
+all_data_pres <- data.frame()
+
+# Combiner les données des présidentielles pour chaque année
+for (year in annees) {
+  # Extraire les données pour le premier tour
+  df_t1_pres <- results_list_pres[[paste0("df_part_t1_pres_", year)]] |> 
+    mutate(
+      Annee = year,
+      Tour = "T1",
+      Taux_abs = Taux_abs,
+      Election = "Présidentielles"
+    ) |> 
+    select(Code.du.département, Annee, Tour, Taux_abs, Election)  # Garder les colonnes nécessaires
+  
+  # Extraire les données pour le second tour
+  df_t2_pres <- results_list_pres[[paste0("df_part_t2_pres_", year)]] |> 
+    mutate(
+      Annee = year,
+      Tour = "T2",
+      Taux_abs = Taux_abs,
+      Election = "Présidentielles"
+    ) |> 
+    select(Code.du.département, Annee, Tour, Taux_abs, Election)
+  
+  # Ajouter les données présidentielles au dataframe `all_data_pres`
+  all_data_pres <- bind_rows(all_data_pres, df_t1_pres, df_t2_pres)
+}
+
+# Combiner les données législatives et présidentielles en un seul jeu de données
+all_data_combined <- bind_rows(all_data |> mutate(Election = "Législatives"), all_data_pres)
+
+# Calculer la moyenne nationale du taux d'abstention par année, tour et type d'élection
+all_data_summary_combined <- all_data_combined |> 
+  group_by(Annee, Tour, Election) |> 
+  summarise(Taux_abs_moyen = round(mean(Taux_abs, na.rm = TRUE), 2))
+
+# Créer le graphique comparatif
+a <- ggplot(all_data_summary_combined, aes(x = Annee, y = Taux_abs_moyen, color = Election, linetype = Tour, group = interaction(Election, Tour))) +
+  geom_line(size = 1.2) +
+  geom_point(size = 3) +
+  labs(
+    title = "Comparaison du taux d'abstention moyen entre élections présidentielles et législatives",
+    x = "Année",
+    y = "Taux d'abstention moyen (%)",
+    color = "Type d'élection",
+    linetype = "Tour"
+  ) +
+  theme_minimal()
+
+# Convertir en graphique interactif
+interactive_plota <- ggplotly(a)
+
+```
+
+```{r, include=FALSE, echo=FALSE}
+#| include: false
+#| echo: false
+# Initialiser une liste pour stocker les données combinées pour les élections présidentielles
+all_data_pres <- data.frame()
+
+# Combiner les données des présidentielles pour chaque année
+for (year in annees) {
+  # Extraire les données pour le premier tour des présidentielles
+  df_t1_pres <- results_list_pres[[paste0("df_part_t1_pres_", year)]] |> 
+    mutate(
+      Annee = year,
+      Tour = "T1",
+      Taux_abs = Taux_abs,
+      Election = "Présidentielles"
+    ) |> 
+    select(Code.du.département, Annee, Tour, Taux_abs, Election)  # Garder les colonnes nécessaires
+  
+  # Extraire les données pour le second tour des présidentielles
+  df_t2_pres <- results_list_pres[[paste0("df_part_t2_pres_", year)]] |> 
+    mutate(
+      Annee = year,
+      Tour = "T2",
+      Taux_abs = Taux_abs,
+      Election = "Présidentielles"
+    ) |> 
+    select(Code.du.département, Annee, Tour, Taux_abs, Election)
+  
+  # Ajouter les données présidentielles au dataframe `all_data_pres`
+  all_data_pres <- bind_rows(all_data_pres, df_t1_pres, df_t2_pres)
+}
+
+# Combiner les données législatives et présidentielles
+all_data_combined <- bind_rows(all_data |> mutate(Election = "Législatives"), all_data_pres)
+
+# Calculer la moyenne nationale du taux d'abstention par année, tour et type d'élection
+all_data_summary_combined <- all_data_combined |> 
+  group_by(Annee, Tour, Election) |> 
+  summarise(Taux_abs_moyen = round(mean(Taux_abs, na.rm = TRUE), 2))
+
+# Créer le graphique comparatif entre élections législatives et présidentielles
+y <- ggplot(all_data_summary_combined, aes(x = Annee, y = Taux_abs_moyen, color = Election, linetype = Tour, group = interaction(Election, Tour))) +
+  geom_line(size = 1.2) +  # Tracer les lignes pour chaque type d'élection et chaque tour
+  geom_point(size = 3) +    # Ajouter des points pour chaque observation
+  labs(
+    title = "Comparaison du taux d'abstention moyen entre élections présidentielles et législatives",
+    x = "Année",
+    y = "Taux d'abstention moyen (%)",
+    color = "Type d'élection",  # Légende pour le type d'élection
+    linetype = "Tour"          # Légende pour les tours (1er tour et 2ème tour)
+  ) +
+  theme_minimal() +  # Thème minimal pour une présentation claire
+  scale_color_manual(values = c("Législatives" = "blue", "Présidentielles" = "red"))  # Définir des couleurs pour chaque type d'élection
+
+# Convertir le graphique ggplot en graphique interactif avec plotly
+bailpoury <- ggplotly(y)
+
+```
+
+
+```{r}
+# Afficher le graphique interactif
+interactive_plot
+bailpoury
+```
+
+# Ressources/Credits
+
+## Row {.flow}
+
+Ce dashboard a été réalisé par trois étudiants de M1 Économie de l'université de Tours dans le cadre du programme OpenDataUniversity.
+
+[Courtin Ludovic](https://www.linkedin.com/in/ludovic-courtin-204026150/).\
+<br> [Depussay Mathias](https://www.linkedin.com/in/mathias-depussay-90499b274/).
+
+<br> [Ahanhanzo Glele Mark](https://www.linkedin.com/in/marc-ahanhanzo-glele-6031a6211/).
+
+Lien vers les donnees utilisees :
+
+<br> <https://www.data.gouv.fr/fr/datasets/donnees-des-elections-agregees/#/resources>
